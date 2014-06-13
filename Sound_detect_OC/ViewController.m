@@ -26,6 +26,8 @@
 #define kInputBus 1
 AudioComponentInstance audioUnit;
 AudioStreamBasicDescription audioFormat;
+AudioBufferList GA_list;
+SInt16 audio_data[4096];
 
 
 #pragma mark -RIO Render Callback
@@ -37,10 +39,18 @@ static OSStatus	recordingCallback(
                             UInt32 						inNumberFrames,
                             AudioBufferList 			*ioData)
 {
-  //  HiJackMgr *THIS = (HiJackMgr *)inRefCon;
-    OSStatus err = AudioUnitRender(audioUnit, ioActionFlags, inTimeStamp, 1, inNumberFrames, ioData);
+    SInt16 *data_ptr;
+   OSStatus err = AudioUnitRender(audioUnit, ioActionFlags, inTimeStamp, 1, inNumberFrames, &GA_list);
     
-    NSLog(@"asasadss");
+    NSLog(@"ERR %d data Len %d",(int)err,(unsigned int)inNumberFrames);
+    data_ptr = GA_list.mBuffers[0].mData;
+    for (int i=0;i<1;i+=4){
+        NSLog(@"%d %d %d %d",data_ptr[i],data_ptr[i+1],data_ptr[i+2],data_ptr[i+3]);
+
+        
+    }
+    
+    
     return err;
 }
 
@@ -51,6 +61,13 @@ static OSStatus	recordingCallback(
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    
+    GA_list.mNumberBuffers = 1;
+    GA_list.mBuffers[0].mNumberChannels = 1;
+    GA_list.mBuffers[0].mDataByteSize = sizeof(audio_data);
+    GA_list.mBuffers[0].mData = audio_data;
+
+    
     // Do any additional setup after loading the view, typically from a nib.
     //setup_IO();
     NSError *sessionError;
@@ -131,14 +148,14 @@ static OSStatus	recordingCallback(
     
     // Describe format
     AudioStreamBasicDescription audioFormat;
-    audioFormat.mSampleRate         = 44100.00;
-    audioFormat.mFormatID           = kAudioFormatLinearPCM;
-    audioFormat.mFormatFlags        = kAudioFormatFlagsNativeFloatPacked |kAudioFormatFlagIsNonInterleaved;
-    audioFormat.mFramesPerPacket    = 1;
-    audioFormat.mChannelsPerFrame   = 1;
-    audioFormat.mBitsPerChannel     = 32;
-    audioFormat.mBytesPerPacket     = 4;
-    audioFormat.mBytesPerFrame      = 4;
+    audioFormat.mSampleRate			= 44100.00;
+    audioFormat.mFormatID			= kAudioFormatLinearPCM;
+    audioFormat.mFormatFlags		= kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
+    audioFormat.mFramesPerPacket	= 1;
+    audioFormat.mChannelsPerFrame	= 1;
+    audioFormat.mBitsPerChannel		= 16;
+    audioFormat.mBytesPerPacket		= 2;
+    audioFormat.mBytesPerFrame		= 2;
     
     // Apply format
     status = AudioUnitSetProperty(audioUnit,
@@ -153,11 +170,25 @@ static OSStatus	recordingCallback(
     callbackStruct.inputProc = recordingCallback;
     callbackStruct.inputProcRefCon = (__bridge void *)(self);
     status = AudioUnitSetProperty(audioUnit,
-                                  kAudioUnitProperty_SetRenderCallback,
-                                  kAudioUnitScope_Input,
-                                  0,
+                                  kAudioOutputUnitProperty_SetInputCallback,
+                                  kAudioUnitScope_Global,
+                                  kInputBus,
                                   &callbackStruct,
                                   sizeof(callbackStruct));
+    
+    // Disable buffer allocation for the recorder (optional - do this if we want to pass in our own)
+    flag = 0;
+    status = AudioUnitSetProperty(audioUnit,
+                                  kAudioUnitProperty_ShouldAllocateBuffer,
+                                  kAudioUnitScope_Output,
+                                  kInputBus,
+                                  &flag,
+                                  sizeof(flag));
+    
+    UInt32 maxFramesPerSlice = 4096;
+    AudioUnitSetProperty(audioUnit, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFramesPerSlice, sizeof(UInt32));
+    
+    
     status = AudioUnitInitialize(audioUnit);
     status = AudioOutputUnitStart(audioUnit);//!!!!!!!!!!
     
