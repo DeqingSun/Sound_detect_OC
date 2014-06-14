@@ -15,7 +15,8 @@
 
 @interface ViewController ()
             
-
+@property (weak, nonatomic) IBOutlet UIProgressView *progressView;
+//@property (nonatomic, strong) UIProgressView *progressView;
 @end
 
 @implementation ViewController
@@ -28,6 +29,11 @@ AudioComponentInstance audioUnit;
 AudioStreamBasicDescription audioFormat;
 AudioBufferList GA_list;
 SInt16 audio_data[4096];
+int period_counter=0;
+bool pos_output=false;
+int uart_phase=0;
+int uartdata=0;
+UIProgressView *progressView_ref;
 
 
 #pragma mark -RIO Render Callback
@@ -42,14 +48,62 @@ static OSStatus	recordingCallback(
     SInt16 *data_ptr;
    OSStatus err = AudioUnitRender(audioUnit, ioActionFlags, inTimeStamp, 1, inNumberFrames, &GA_list);
     
-    NSLog(@"ERR %d data Len %d",(int)err,(unsigned int)inNumberFrames);
+   // NSLog(@"ERR %d data Len %d",(int)err,(unsigned int)inNumberFrames);
     data_ptr = GA_list.mBuffers[0].mData;
-    for (int i=0;i<1;i+=4){
-        NSLog(@"%d %d %d %d",data_ptr[i],data_ptr[i+1],data_ptr[i+2],data_ptr[i+3]);
+   // for (int i=0;i<1;i+=4){
+    //    NSLog(@"%d %d %d %d",data_ptr[i],data_ptr[i+1],data_ptr[i+2],data_ptr[i+3]);
 
         
+   // }
+    SInt16 audio_data2[256];
+    for (int i=0;i<inNumberFrames;i++){
+        audio_data2[i]=data_ptr[i];
+        int element = data_ptr[i];
+        period_counter++;
+        if (pos_output){
+            if (element<-500) pos_output=false;   //FALLING EDGE
+        }else{
+            if (element>500){   //RISING EDGE
+                pos_output=true;
+                int period=period_counter;
+                period_counter=0;
+                //detect_period, 1200HZ 36.75 2200HZ 20.05
+                if (period>16 && period<63){
+                    int uart_bit=0;
+                    if (period>30){	//between 26 and 39.5, no good reason
+                        uart_bit=1;
+                    }
+                    switch (uart_phase){
+                        case 0:
+                            if (uart_bit==0){
+                                uart_phase=1;
+                                uartdata=0;
+                            }
+                            break;
+                        case 1:case 2:case 3:case 4:case 5:case 6:case 7:case 8:
+                            if (uart_bit==1)  uartdata|=(1<<(uart_phase-1));
+                            uart_phase++;
+                            break;
+                        case 9:
+                            if (uart_bit==1){	//this is a valid byte
+                                NSLog(@"!!!!!%d",uartdata);
+                                //progressView_ref.progress = uartdata/255.0;
+                                
+                                dispatch_sync(dispatch_get_main_queue(), ^{
+                                    progressView_ref.progress = (float)uartdata/255.0f;
+                                });
+                            }
+                            
+                            uart_phase=0;	
+                        default:
+                            uart_phase=0;							
+                    }
+                }else{	//Not a valid bit
+                    
+                }
+            }
+        }
     }
-    
     
     return err;
 }
@@ -61,6 +115,8 @@ static OSStatus	recordingCallback(
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    
+    progressView_ref=self.progressView;
     
     GA_list.mNumberBuffers = 1;
     GA_list.mBuffers[0].mNumberChannels = 1;
@@ -185,8 +241,8 @@ static OSStatus	recordingCallback(
                                   &flag,
                                   sizeof(flag));
     
-    UInt32 maxFramesPerSlice = 4096;
-    AudioUnitSetProperty(audioUnit, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFramesPerSlice, sizeof(UInt32));
+    //UInt32 maxFramesPerSlice = 4096;
+    //AudioUnitSetProperty(audioUnit, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFramesPerSlice, sizeof(UInt32));
     
     
     status = AudioUnitInitialize(audioUnit);
