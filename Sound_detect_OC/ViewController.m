@@ -55,7 +55,7 @@ static OSStatus	recordingCallback(
 
         
    // }
-    SInt16 audio_data2[256];
+    SInt16 audio_data2[inNumberFrames];
     for (int i=0;i<inNumberFrames;i++){
         audio_data2[i]=data_ptr[i];
         int element = data_ptr[i];
@@ -154,7 +154,7 @@ static OSStatus	recordingCallback(
     BOOL success = [session setCategory: AVAudioSessionCategoryPlayAndRecord error: &sessionError];
     if (!success) { NSLog(@"setCategory ERR"); }
     
-    NSTimeInterval bufferDuration = 0.005;
+    NSTimeInterval bufferDuration = 0.03;
     success = [session
                setPreferredIOBufferDuration: bufferDuration
                error: &sessionError];
